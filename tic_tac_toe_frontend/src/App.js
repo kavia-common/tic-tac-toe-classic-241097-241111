@@ -4,57 +4,40 @@ import "./App.css";
 const BOARD_SIZE = 9;
 
 /**
- * Returns the winner symbol ("X" or "O") if there is a winner, otherwise null.
- * @param {Array<"X"|"O"|null>} squares
- * @returns {"X"|"O"|null}
+ * All winning line combinations for a 3x3 Tic Tac Toe board.
+ * Index mapping:
+ * 0 1 2
+ * 3 4 5
+ * 6 7 8
  */
-function calculateWinner(squares) {
-  const lines = [
-    // Rows
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    // Cols
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    // Diags
-    [0, 4, 8],
-    [2, 4, 6],
-  ];
-
-  for (const [a, b, c] of lines) {
-    const v = squares[a];
-    if (v && v === squares[b] && v === squares[c]) return v;
-  }
-  return null;
-}
+const WIN_LINES = [
+  // Rows
+  [0, 1, 2],
+  [3, 4, 5],
+  [6, 7, 8],
+  // Columns
+  [0, 3, 6],
+  [1, 4, 7],
+  [2, 5, 8],
+  // Diagonals
+  [0, 4, 8],
+  [2, 4, 6],
+];
 
 /**
- * Returns indexes that form a winning line, otherwise null.
+ * Returns the winner symbol ("X" or "O") and the winning line indices if there is a winner.
  * @param {Array<"X"|"O"|null>} squares
- * @returns {number[]|null}
+ * @returns {{ winner: ("X"|"O"|null), line: (number[]|null) }}
  */
-function calculateWinningLine(squares) {
-  const lines = [
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-
-    [0, 4, 8],
-    [2, 4, 6],
-  ];
-
-  for (const line of lines) {
+function getWinnerInfo(squares) {
+  for (const line of WIN_LINES) {
     const [a, b, c] = line;
     const v = squares[a];
-    if (v && v === squares[b] && v === squares[c]) return line;
+    if (v && v === squares[b] && v === squares[c]) {
+      return { winner: v, line };
+    }
   }
-  return null;
+  return { winner: null, line: null };
 }
 
 /**
@@ -66,20 +49,33 @@ function isBoardFull(squares) {
   return squares.every((s) => s !== null);
 }
 
+/**
+ * Determines the next player based on the current board state.
+ * X always starts. If counts are equal, X plays next; otherwise O.
+ * @param {Array<"X"|"O"|null>} squares
+ * @returns {"X"|"O"}
+ */
+function getNextPlayerFromSquares(squares) {
+  const xCount = squares.filter((s) => s === "X").length;
+  const oCount = squares.filter((s) => s === "O").length;
+  return xCount === oCount ? "X" : "O";
+}
+
 // PUBLIC_INTERFACE
 function App() {
   /** @type {[Array<"X"|"O"|null>, Function]} */
   const [squares, setSquares] = useState(() => Array(BOARD_SIZE).fill(null));
-  /** @type {["X"|"O", Function]} */
-  const [nextPlayer, setNextPlayer] = useState("X");
 
-  const winningLine = useMemo(() => calculateWinningLine(squares), [squares]);
-  const winner = useMemo(() => calculateWinner(squares), [squares]);
-  const isDraw = useMemo(
-    () => !winner && isBoardFull(squares),
-    [winner, squares]
+  const { winner, line: winningLine } = useMemo(
+    () => getWinnerInfo(squares),
+    [squares]
   );
+
+  const isDraw = useMemo(() => !winner && isBoardFull(squares), [winner, squares]);
   const gameOver = Boolean(winner || isDraw);
+
+  // Derive next player from squares to avoid stale-state edge cases.
+  const nextPlayer = useMemo(() => getNextPlayerFromSquares(squares), [squares]);
 
   const statusText = useMemo(() => {
     if (winner) return `Winner: ${winner}`;
@@ -89,22 +85,25 @@ function App() {
 
   // PUBLIC_INTERFACE
   const handleSquareActivate = (index) => {
-    if (gameOver) return;
-    if (squares[index]) return;
-
     setSquares((prev) => {
+      // Prevent any moves after the game is over (including "double click" races).
+      const { winner: w } = getWinnerInfo(prev);
+      const draw = !w && isBoardFull(prev);
+      if (w || draw) return prev;
+
+      // Prevent overwriting.
+      if (prev[index]) return prev;
+
+      const currentPlayer = getNextPlayerFromSquares(prev);
       const copy = prev.slice();
-      copy[index] = nextPlayer;
+      copy[index] = currentPlayer;
       return copy;
     });
-
-    setNextPlayer((p) => (p === "X" ? "O" : "X"));
   };
 
   // PUBLIC_INTERFACE
   const resetGame = () => {
     setSquares(Array(BOARD_SIZE).fill(null));
-    setNextPlayer("X");
   };
 
   return (
@@ -121,13 +120,12 @@ function App() {
             </div>
           </div>
 
-          <section
-            className="statusCard"
-            aria-live="polite"
-            aria-atomic="true"
-          >
+          <section className="statusCard" aria-live="polite" aria-atomic="true">
             <div className="statusLabel">Status</div>
-            <div className="statusValue" data-state={winner ? "win" : isDraw ? "draw" : "play"}>
+            <div
+              className="statusValue"
+              data-state={winner ? "win" : isDraw ? "draw" : "play"}
+            >
               {statusText}
             </div>
           </section>
